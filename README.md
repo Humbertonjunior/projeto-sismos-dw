@@ -10,7 +10,7 @@ O relatório foi construído no Microsoft Power BI e fornece uma visão geoespac
 ## ⚙️ Arquitetura e Fluxo de Dados (ETL)
 A automação e confiabilidade do fluxo de dados são os grandes destaques desta arquitetura:
 
-1. **Orquestração (Apache Airflow):** Todo o fluxo de dados é gerenciado por uma DAG no Apache Airflow, configurada com um gatilho de agendamento (cron) para rodar automaticamente **a cada 2 horas**.
+1. **Orquestração (Apache Airflow):** Todo o fluxo de dados é gerenciado por uma DAG no Apache Airflow, configurada com um gatilho de agendamento (cron) para rodar automaticamente **a cada 4 horas**.
 2. **Extração e Tratamento (Python):** O Airflow aciona um script Python responsável por fazer o request na API pública de sismologia. Esse mesmo script roda em memória a transformação dos dados (limpeza de nulos, conversão de tipos e categorização) antes de seguir para o banco.
 3. **Carga / Armazenamento (Banco de Dados):** O dataframe limpo é inserido (append/merge) no banco de dados relacional, mantendo o histórico de sismos atualizado.
 4. **Consumo (Power BI):** O dashboard se conecta diretamente ao banco para refletir as atualizações contínuas geradas pelo pipeline.
