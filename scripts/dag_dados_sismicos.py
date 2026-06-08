@@ -8,13 +8,11 @@ import hashlib
 from sqlalchemy import create_engine, text
 
 def obter_motor_dw():
-    """Busca as credenciais dinamicamente no cofre do Airflow."""
     credenciais = BaseHook.get_connection('banco_data_warehouse')
     url = f"postgresql+psycopg2://{credenciais.login}:{credenciais.password}@{credenciais.host}:{credenciais.port}/{credenciais.schema}"
     return create_engine(url, isolation_level="AUTOCOMMIT")
 
 def gerar_hash_local(row):
-    """Função auxiliar para gerar o ID único do local usando as colunas do Pandas."""
     chave = f"{row['nome_local']}_{row['latitude']}_{row['longitude']}"
     return hashlib.md5(chave.encode()).hexdigest()
 
@@ -27,21 +25,16 @@ def extrair_transformar_carregar_sismos():
         print(f"Falha na extração. Código: {response.status_code}")
         return
 
-    # 1. CARGA TOTAL (O TABELÃO)
-    # json_normalize achata o JSON aninhado em um único DataFrame gigante
     features = response.json()['features']
     df_mestre = pd.json_normalize(features)
     
-    # 2. LIMPEZA E TRATAMENTO VETORIZADO NO PANDAS
-    # Renomeando as colunas que vieram achatadas para nomes mais fáceis
     df_mestre.rename(columns={
         'id': 'id_evento',
         'properties.mag': 'magnitude',
         'properties.place': 'nome_local'
     }, inplace=True)
     
-    # Tratando o Tempo
-    # Converte os milissegundos para datetime do Pandas
+ 
     df_mestre[['distancia_do_nome_local', 'nome_local']] = df_mestre['nome_local'].str.extract(r'(\d+)\s*km\s*(.*)')
     df_mestre['data_hora'] = pd.to_datetime(df_mestre['properties.time'], unit='ms')
     df_mestre['id_tempo'] = df_mestre['data_hora'].dt.strftime('%Y%m%d%H%M%S') 
@@ -51,30 +44,27 @@ def extrair_transformar_carregar_sismos():
     df_mestre['mes'] = df_mestre['data_hora'].dt.month
     df_mestre['dia'] = df_mestre['data_hora'].dt.day
     
-    # Tratando a Localização e Geometria
-    # O campo coordinates vem como uma lista [longitude, latitude, profundidade]
+  
     df_mestre['longitude'] = df_mestre['geometry.coordinates'].apply(lambda x: x[0] if isinstance(x, list) else None)
     df_mestre['latitude'] = df_mestre['geometry.coordinates'].apply(lambda x: x[1] if isinstance(x, list) else None)
     df_mestre['profundidade_km'] = df_mestre['geometry.coordinates'].apply(lambda x: x[2] if isinstance(x, list) else None)
     
-    # Criando o Hash (ID Local) aplicando a função em cada linha (axis=1)
+    
     df_mestre['id_localizacao'] = df_mestre.apply(gerar_hash_local, axis=1)
     
     
-    # 3. RECORTANDO O TABELÃO NOS 3 DATAFRAMES FINAIS
+ 
     print(f"Dados brutos tratados. Total de registros: {len(df_mestre)}")
     
-    # DataFrame: Dimensão Tempo
+    
     df_tempo = df_mestre[['id_tempo', 'data_completa', 'hora_completa', 'ano', 'mes', 'dia']].drop_duplicates(subset=['id_tempo'])
     
-    # DataFrame: Dimensão Local
     df_local = df_mestre[['id_localizacao', 'nome_local', 'distancia_do_nome_local', 'latitude', 'longitude']].drop_duplicates(subset=['id_localizacao'])
     
-    # DataFrame: Tabela Fato
     df_fato = df_mestre[['id_evento', 'id_localizacao', 'id_tempo', 'magnitude', 'profundidade_km']].drop_duplicates(subset=['id_evento'])
     
     
-    # 4. CARGA NO BANCO DE DADOS (Inalterado)
+  
     engine = create_engine(obter_motor_dw().url)
     with engine.begin() as conn:
         for row in df_tempo.to_dict('records'):
@@ -100,7 +90,6 @@ def extrair_transformar_carregar_sismos():
             
     print("ETL concluído. Dados separados e carregados com sucesso!")
 
-# --- ORQUESTRAÇÃO AIRFLOW ---
 with DAG(
     'etl_sismos_usgs_v2',
     default_args={'retries': 2, 'retry_delay': timedelta(minutes=2)},
